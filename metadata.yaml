@@ -1,0 +1,5 @@
+name: astrbot_plugin_ip_proxy # 这是你的插件的唯一识别名。
+desc: 一个将HTTP代理API转换为本地SOCKS5代理的AstrBot插件。 # 插件简短描述
+version: v1.0 # 插件版本号。格式：v1.1.1 或者 v1.1
+author: timetetng	 # 作者
+repo: https://github.com/timetetng/astrbot_plugin_ip_proxy # 插件的仓库地址

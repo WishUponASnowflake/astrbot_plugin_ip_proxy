@@ -1,0 +1,51 @@
+{
+  "start_on_load": {
+    "description": "插件加载时自动开启代理",
+    "type": "bool",
+    "default": true,
+    "hint": "如果开启，代理服务将在AstrBot启动时自动运行，无需手动发送开启指令。"
+  },
+  "api_url": {
+    "description": "获取代理IP的API地址",
+    "type": "string",
+    "default": "http://proxy.siyetian.com/apis_get.html?token=YOUR_TOKEN",
+    "hint": "请务必将'YOUR_TOKEN'替换为您的有效API令牌或完整的API地址。",
+    "obvious_hint": true
+  },
+  "listen_host": {
+    "description": "本地代理服务的监听地址",
+    "type": "string",
+    "default": "127.0.0.1",
+    "hint": "代理服务将监听本地的这个地址。通常保持为127.0.0.1即可。修改后需要重启代理服务才能生效。"
+  },
+  "local_port": {
+    "description": "本地代理服务的监听端口",
+    "type": "int",
+    "default": 8888,
+    "hint": "代理服务将监听本地的这个端口。修改后需要重启代理服务才能生效。"
+  },
+  "validation_url": {
+    "description": "用于验证代理IP有效性的URL",
+    "type": "string",
+    "default": "http://www.baidu.com",
+    "hint": "插件会尝试通过代理访问此URL来判断IP是否可用。"
+  },
+  "validation_interval": {
+    "description": "IP验证间隔（秒）",
+    "type": "int",
+    "default": 60,
+    "hint": "一个IP被验证有效后，在此时间内不会重复验证。此值应小于IP失效时间。"
+  },
+  "validation_timeout": {
+    "description": "验证请求的超时时间（秒）",
+    "type": "int",
+    "default": 5,
+    "hint": "访问验证URL时，如果超过此时间未响应，则判定代理IP无效。"
+  },
+  "ip_expiration_time": {
+    "description": "IP绝对失效时间（秒）",
+    "type": "int",
+    "default": 300,
+    "hint": "一个IP从获取开始，无论是否有效，超过此时间都将被强制丢弃并获取新IP。设置为0则永不强制失效。"
+  }
+}
