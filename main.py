@@ -11,10 +11,10 @@ from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 # 使用 @register 装饰器注册插件
 @register(
     "astrbot_plugin_ip_proxy",
-    "xingjian",
-    "一个将HTTP代理API转换为本地代理的AstrBot插件 (v2.6)",
-    "2.6.0",
-    "https://github.com/your/repo"
+    "timetetng",
+    "一个将HTTP代理API转换为本地代理的AstrBot插件 ",
+    "1.1",
+    "https://github.com/timetetng/astrbot_plugin_ip_proxy"
 )
 class IPProxyPlugin(Star):
     """
@@ -247,7 +247,7 @@ class IPProxyPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def status_proxy(self, event: AstrMessageEvent) -> MessageEventResult:
         """显示代理服务的当前状态和配置"""
-        status_text = "运行中" if self.server_task and not self.server_task.done() else "已停止"
+        status_text = "✅运行中" if self.server_task and not self.server_task.done() else "❌已停止"
         ip_text = f"{self.current_ip}:{self.current_port}" if self.current_ip else "无"
         listen_host = self.config.get("listen_host", "127.0.0.1")
         local_port = self.config.get("local_port", 8888)
@@ -258,7 +258,6 @@ class IPProxyPlugin(Star):
             f"监听地址: {listen_host}:{local_port}\n"
             f"当前代理IP: {ip_text}\n"
             f"累计获取IP数: {self.ip_usage_count}\n\n"
-            f"ℹ️ 详细配置请前往 AstrBot 管理后台查看和修改。"
         )
         return event.plain_result(status_message)
 
