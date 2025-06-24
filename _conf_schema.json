@@ -8,8 +8,8 @@
   "api_url": {
     "description": "获取代理IP的API地址",
     "type": "string",
-    "default": "",
-    "hint": "请填写完整的IP提取API地址。",
+    "default": "http://proxy.siyetian.com/apis_get.html?token=YOUR_TOKEN",
+    "hint": "请务必将'YOUR_TOKEN'替换为您的有效API令牌或完整的API地址。",
     "obvious_hint": true
   },
   "listen_host": {
@@ -47,5 +47,21 @@
     "type": "int",
     "default": 300,
     "hint": "一个IP从获取开始，无论是否有效，超过此时间都将被强制丢弃并获取新IP。设置为0则永不强制失效。"
+  },
+    "connect_timeout": {
+    "description": "连接到远程代理的超时时间（秒）",
+    "type": "int",
+    "default": 10,
+    "hint": "插件尝试连接到获取到的代理IP时，若超过此时长则视为连接失败。可适当调高此值以适应慢速代理。"
+  },
+  "allowed_domains": {
+    "description": "代理域名白名单",
+    "type": "list",
+    "default": [
+      "gmserver-api.aki-game2.com",
+      "gmserver-api.aki-game2.net",
+      "api.kurobbs.com"
+    ],
+    "hint": "只有请求的目标域名在此列表中，代理才会转发请求。建议全部使用小写字母。"
   }
 }
