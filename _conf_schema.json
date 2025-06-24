@@ -8,8 +8,8 @@
   "api_url": {
     "description": "获取代理IP的API地址",
     "type": "string",
-    "default": "http://proxy.siyetian.com/apis_get.html?token=YOUR_TOKEN",
-    "hint": "请务必将'YOUR_TOKEN'替换为您的有效API令牌或完整的API地址。",
+    "default": "",
+    "hint": "请填写完整的IP提取API地址。",
     "obvious_hint": true
   },
   "listen_host": {
