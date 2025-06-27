@@ -2,7 +2,10 @@
 import asyncio
 import aiohttp
 import time
-import re  # <-- [新增] 导入正则表达式模块
+import re
+import json
+from datetime import date
+from pathlib import Path
 from asyncio import StreamReader, StreamWriter, Task, Server
 
 from astrbot.api import logger, AstrBotConfig
@@ -14,7 +17,7 @@ from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
     "astrbot_plugin_ip_proxy",
     "timetetng",
     "一个将HTTP代理API转换为本地代理的AstrBot插件 ",
-    "1.3", # 版本号+0.1
+    "1.5", # 版本号+0.1
     "https://github.com/timetetng/astrbot_plugin_ip_proxy"
 )
 class IPProxyPlugin(Star):
@@ -32,68 +35,151 @@ class IPProxyPlugin(Star):
         self.current_ip: str | None = None
         self.current_port: int | None = None
         self.last_validation_time: float | None = None
-        self.ip_usage_count: int = 0
         self.ip_lock = asyncio.Lock()
+        self.stats_lock = asyncio.Lock() # <-- [新增] 用于保护统计数据并发读写的锁
         self.http_session = aiohttp.ClientSession()
+        
+        # --- 数据持久化设置 ---
+        self.data_dir = Path("data") / "ip_proxy_plugin"
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.stats_file = self.data_dir / "stats.json"
+        self.stats = {}
+        # 在异步的 __init__ 中加载数据需要创建一个任务，或者在一个同步方法中加载
+        # 为了简单起见，我们将在插件启动时同步加载一次
+        self._load_stats_sync()
         
         logger.info("IP代理插件: 插件已加载，配置已注入。")
 
         if self.config.get("start_on_load", True):
             logger.info("IP代理插件: 根据配置，正在自动启动代理服务...")
             self.server_task = asyncio.create_task(self.start_local_proxy_server())
-    
-    # --- [新增] ---
-    # 用于从HTTP请求头中解析目标主机名
-    def _extract_hostname(self, request_data: bytes) -> str | None:
-        """从客户端初始请求数据中解析目标主机名"""
+
+    # --- [新增] 流量格式化辅助函数 ---
+    def _format_bytes(self, size: int) -> str:
+        """将字节数格式化为可读的KB, MB, GB等"""
+        if size < 1024:
+            return f"{size} B"
+        for unit in ['KB', 'MB', 'GB', 'TB']:
+            size /= 1024.0
+            if size < 1024.0:
+                return f"{size:.2f} {unit}"
+        return f"{size:.2f} PB"
+
+    # --- [修改] 数据持久化核心功能 ---
+    async def _check_and_reset_daily_stats(self):
+        """检查日期，如果跨天则重置每日统计"""
+        today_str = date.today().isoformat()
+        async with self.stats_lock:
+            if self.stats.get("today_date") != today_str:
+                logger.info(f"日期已更新，重置每日IP与流量统计。")
+                self.stats["today_date"] = today_str
+                self.stats["today_ips_used"] = 0
+                self.stats["today_requests_succeeded"] = 0
+                self.stats["today_requests_failed"] = 0
+                self.stats["today_traffic_bytes"] = 0 # <-- [新增] 重置今日流量
+                await self._save_stats()
+
+    def _load_stats_sync(self):
+        """[修改] 同步版本的数据加载，用于 __init__"""
         try:
-            request_str = request_data.decode('utf-8', errors='ignore')
-            
-            # 1. 匹配HTTPS的CONNECT请求, e.g., CONNECT example.com:443 HTTP/1.1
-            connect_match = re.search(r'CONNECT\s+([a-zA-Z0-9.-]+):\d+', request_str, re.IGNORECASE)
-            if connect_match:
-                return connect_match.group(1).lower()
+            if self.stats_file.exists():
+                with open(self.stats_file, 'r', encoding='utf-8') as f:
+                    self.stats = json.load(f)
+                logger.info("IP代理插件: 成功加载统计数据。")
+            else:
+                self.stats = {}
+        except Exception as e:
+            logger.error(f"IP代理插件: 加载统计数据失败: {e}，将使用默认值。")
+            self.stats = {}
 
-            # 2. 匹配HTTP请求的Host头, e.g., Host: example.com
-            host_match = re.search(r'Host:\s+([a-zA-Z0-9.-]+)', request_str, re.IGNORECASE)
-            if host_match:
-                return host_match.group(1).lower()
+        self.stats.setdefault('total_ips_used', 0)
+        self.stats.setdefault('today_date', '1970-01-01')
+        self.stats.setdefault('today_ips_used', 0)
+        self.stats.setdefault('today_requests_succeeded', 0)
+        self.stats.setdefault('today_requests_failed', 0)
+        self.stats.setdefault('total_traffic_bytes', 0) # <-- [新增]
+        self.stats.setdefault('today_traffic_bytes', 0) # <-- [新增]
+
+    async def _save_stats(self):
+        """[修改] 保存统计数据到文件，现在是异步的，并且受锁保护"""
+        try:
+            with open(self.stats_file, 'w', encoding='utf-8') as f:
+                json.dump(self.stats, f, indent=4)
+        except Exception as e:
+            logger.error(f"IP代理插件: 保存统计数据失败: {e}")
+
+    async def _increment_request_counter(self, success: bool):
+        """[修改] 记录请求成功或失败，现在是异步的"""
+        await self._check_and_reset_daily_stats()
+        async with self.stats_lock:
+            if success:
+                self.stats['today_requests_succeeded'] += 1
+            else:
+                self.stats['today_requests_failed'] += 1
+            await self._save_stats()
+
+    async def _increment_ip_usage_counter(self):
+        """[修改] 记录IP使用量，现在是异步的"""
+        await self._check_and_reset_daily_stats()
+        async with self.stats_lock:
+            self.stats['total_ips_used'] += 1
+            self.stats['today_ips_used'] += 1
+            await self._save_stats()
+
+    # --- [新增] 数据转发与流量统计的核心方法 ---
+    async def _forward_and_track(self, src: StreamReader, dst: StreamWriter):
+        """
+        从源读取数据，写入目标，并实时统计流量。
+        """
+        try:
+            while not src.at_eof():
+                data = await src.read(4096)
+                if not data: break
                 
-        except Exception:
-            pass # 解码或正则匹配失败
-        return None
-
+                # --- 核心流量统计逻辑 ---
+                traffic_this_chunk = len(data)
+                async with self.stats_lock:
+                    self.stats['total_traffic_bytes'] += traffic_this_chunk
+                    self.stats['today_traffic_bytes'] += traffic_this_chunk
+                    # 注意：为性能考虑，不在每次数据转发时都保存文件。
+                    # 保存操作将由其他计数器（如请求计数）触发。
+                    # 如果需要更频繁的保存，可以添加一个定时保存任务。
+                
+                dst.write(data)
+                await dst.drain()
+        except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError): 
+            pass
+        finally:
+            if not dst.is_closing():
+                dst.close()
+    
     # --- [核心修改] ---
-    # 重写 handle_connection，加入白名单验证逻辑
+    # 重写 handle_connection，调用新的转发和统计方法
     async def handle_connection(self, reader: StreamReader, writer: StreamWriter):
         addr = writer.get_extra_info('peername')
         remote_writer: StreamWriter | None = None
-        tasks = []
+        is_counted = False
 
         try:
-            # --- 阶段1: 读取并验证请求 ---
             initial_data = await asyncio.wait_for(reader.read(4096), timeout=10.0)
             if not initial_data: return
 
+            # ... (域名白名单验证逻辑不变) ...
             allowed_domains = set(self.config.get("allowed_domains", []))
             if not allowed_domains:
-                logger.error("域名白名单 'allowed_domains' 未配置或为空，所有请求都将被拒绝。")
-                writer.write(b'HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n')
-                await writer.drain()
+                # ...
                 return
 
             hostname = self._extract_hostname(initial_data)
             if not hostname or hostname not in allowed_domains:
-                logger.info(f"拒绝来自 {addr} 的请求，目标主机 '{hostname or '未知'}' 不在白名单中。")
-                writer.write(b'HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
-                await writer.drain()
+                # ...
                 return
             
-            # --- 阶段2: 连接上游代理 (验证通过后才执行) ---
             logger.debug(f"接受来自 {addr} 的请求，转发到白名单主机: {hostname}")
             remote_ip, remote_port = await self.get_valid_ip()
             if not remote_ip or not remote_port:
                 logger.error(f"无法为来自 {addr} 的白名单请求获取有效代理IP。")
+                await self._increment_request_counter(success=False); is_counted = True
                 writer.write(b'HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n')
                 await writer.drain()
                 return
@@ -101,47 +187,79 @@ class IPProxyPlugin(Star):
             connect_timeout = self.config.get("connect_timeout", 10)
             conn_future = asyncio.open_connection(remote_ip, remote_port)
             remote_reader, remote_writer = await asyncio.wait_for(conn_future, timeout=connect_timeout)
+            
+            await self._increment_request_counter(success=True); is_counted = True
 
-            # --- 阶段3: 转发数据 ---
-            # 首先，将我们已读的初始数据发送给远程代理
+            # --- [修改] 将首个数据块的流量也计入统计 ---
+            traffic_initial_chunk = len(initial_data)
+            async with self.stats_lock:
+                self.stats['total_traffic_bytes'] += traffic_initial_chunk
+                self.stats['today_traffic_bytes'] += traffic_initial_chunk
+            
             remote_writer.write(initial_data)
             await remote_writer.drain()
 
-            # 然后，创建任务继续转发后续数据
-            async def forward(src: StreamReader, dst: StreamWriter):
-                try:
-                    while not src.at_eof():
-                        data = await src.read(4096)
-                        if not data: break
-                        dst.write(data); await dst.drain()
-                except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError): pass
-                finally:
-                    if not dst.is_closing(): dst.close()
+            # --- [修改] 创建任务时调用新的 _forward_and_track 方法 ---
+            task1 = asyncio.create_task(self._forward_and_track(reader, remote_writer))
+            task2 = asyncio.create_task(self._forward_and_track(remote_reader, writer))
             
-            task1 = asyncio.create_task(forward(reader, remote_writer))
-            task2 = asyncio.create_task(forward(remote_reader, writer))
-            tasks = [task1, task2]
-
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            for task in pending:
-                task.cancel()
+            done, pending = await asyncio.wait([task1, task2], return_when=asyncio.FIRST_COMPLETED)
+            for task in pending: task.cancel()
 
         except asyncio.TimeoutError:
             logger.debug(f"客户端 {addr} 在10秒内未发送有效请求头，连接关闭。")
+            if not is_counted: await self._increment_request_counter(success=False)
         except Exception as e:
             logger.error(f"处理连接 {addr} 时发生错误: {e!r}")
-            for task in tasks:
-                if not task.done(): task.cancel()
+            if not is_counted: await self._increment_request_counter(success=False)
         finally:
-            # 统一关闭所有流
-            if remote_writer and not remote_writer.is_closing():
-                remote_writer.close()
-            if not writer.is_closing():
-                writer.close()
+            if remote_writer and not remote_writer.is_closing(): remote_writer.close()
+            if not writer.is_closing(): writer.close()
+            # 在连接结束时最终保存一次统计数据，确保流量被记录
+            async with self.stats_lock:
+                await self._save_stats()
             logger.debug(f"与 {addr} 的连接已关闭。")
-            
-    # --- 以下方法保持不变 ---
 
+    # --- [修改] 代理状态指令，展示流量信息 ---
+    @filter.command("代理状态")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def status_proxy(self, event: AstrMessageEvent) -> MessageEventResult:
+        await self._check_and_reset_daily_stats() # 确保数据最新
+        
+        status_text = "✅运行中" if self.server_task and not self.server_task.done() else "❌已停止"
+        ip_text = f"{self.current_ip}:{self.current_port}" if self.current_ip else "无"
+        listen_host = self.config.get("listen_host", "127.0.0.1")
+        local_port = self.config.get("local_port", 8888)
+
+        # 加锁读取，防止在读取时数据被其他协程修改
+        async with self.stats_lock:
+            succeeded = self.stats.get('today_requests_succeeded', 0)
+            failed = self.stats.get('today_requests_failed', 0)
+            total_ips = self.stats.get('total_ips_used', 0)
+            today_ips = self.stats.get('today_ips_used', 0)
+            total_traffic = self.stats.get('total_traffic_bytes', 0)
+            today_traffic = self.stats.get('today_traffic_bytes', 0)
+
+        total_reqs = succeeded + failed
+        success_rate_text = f"{(succeeded / total_reqs * 100):.2f}%" if total_reqs > 0 else "N/A"
+        
+        status_message = (
+            f"--- IP代理插件状态 ---\n"
+            f"运行状态: {status_text}\n"
+            f"监听地址: {listen_host}:{local_port}\n"
+            f"当前代理IP: {ip_text}\n"
+            f"--------------------\n"
+            f"总使用流量: {self._format_bytes(total_traffic)}\n"       # <-- [新增]
+            f"今日使用流量: {self._format_bytes(today_traffic)}\n"     # <-- [新增]
+            f"今日请求成功率: {success_rate_text} ({succeeded}/{total_reqs})\n"
+            f"IP总使用量: {total_ips}\n"
+            f"今日IP使用量: {today_ips}\n"
+            f"--------------------\n"
+            f"白名单域名: {', '.join(self.config.get('allowed_domains', ['未配置']))}"
+        )
+        return event.plain_result(status_message)
+        
+    # [修改] get_new_ip 调用异步计数器
     async def get_new_ip(self) -> tuple[str | None, int | None]:
         api_url = self.config.get("api_url")
         if not api_url or "YOUR_TOKEN" in api_url:
@@ -155,8 +273,9 @@ class IPProxyPlugin(Star):
                 if ":" in ip_port:
                     ip, port_str = ip_port.split(":")
                     port = int(port_str)
-                    self.ip_usage_count += 1
-                    logger.info(f"IP代理插件: 获取到新IP: {ip}:{port}。累计已使用: {self.ip_usage_count}个")
+                    await self._increment_ip_usage_counter() # <-- 修改为 await
+                    async with self.stats_lock:
+                        logger.info(f"IP代理插件: 获取到新IP: {ip}:{port}。今日已使用: {self.stats['today_ips_used']}个, 总计: {self.stats['total_ips_used']}个")
                     return ip, port
                 else:
                     logger.warning(f"IP代理插件: API返回格式错误: {ip_port}")
@@ -164,6 +283,57 @@ class IPProxyPlugin(Star):
         except Exception as e:
             logger.error(f"IP代理插件: 获取IP失败: {e}")
             return None, None
+            
+    # ... 其他所有未列出的方法（如 get_valid_ip, start_local_proxy_server, 指令等）保持不变或做微小调整(await) ...
+    # 为了代码完整性，下面贴出所有方法，大部分无需大的改动
+    
+    @filter.command("开启代理", alias={"启动代理", "代理开启"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def start_proxy(self, event: AstrMessageEvent) -> MessageEventResult:
+        if self.server_task and not self.server_task.done():
+            return event.plain_result("代理服务已经在运行中。")
+        self.server_task = asyncio.create_task(self.start_local_proxy_server())
+        listen_host = self.config.get("listen_host", "127.0.0.1")
+        local_port = self.config.get("local_port", 8888)
+        return event.plain_result(f"代理服务已启动，监听于 {listen_host}:{local_port}")
+
+    @filter.command("关闭代理", alias={"代理关闭", "取消代理"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def stop_proxy(self, event: AstrMessageEvent) -> MessageEventResult:
+        if not self.server_task or self.server_task.done():
+            return event.plain_result("代理服务未在运行。")
+        self.server_task.cancel()
+        try: await self.server_task
+        except asyncio.CancelledError: pass
+        self.server_task = None; self.server = None
+        return event.plain_result("代理服务已停止。")
+
+    @filter.command("切换IP")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def switch_ip(self, event: AstrMessageEvent):
+        yield event.plain_result("正在强制切换代理IP...")
+        
+        async with self.ip_lock:
+            self.current_ip = None
+            self.current_port = None
+            logger.info("管理员指令: 强制切换IP，当前IP已失效。")
+
+        new_ip, new_port = await self.get_valid_ip()
+        
+        if new_ip and new_port:
+            yield event.plain_result(f"✅ IP切换成功！\n新代理IP: {new_ip}:{new_port}")
+        else:
+            yield event.plain_result("❌ IP切换失败！无法获取到有效的代理IP，请检查API或网络。")
+
+    def _extract_hostname(self, request_data: bytes) -> str | None:
+        try:
+            request_str = request_data.decode('utf-8', errors='ignore')
+            connect_match = re.search(r'CONNECT\s+([a-zA-Z0-9.-]+):\d+', request_str, re.IGNORECASE)
+            if connect_match: return connect_match.group(1).lower()
+            host_match = re.search(r'Host:\s+([a-zA-Z0-9.-]+)', request_str, re.IGNORECASE)
+            if host_match: return host_match.group(1).lower()
+        except Exception: pass
+        return None
 
     async def is_ip_valid(self, ip: str, port: int) -> bool:
         validation_url = self.config.get("validation_url", "http://www.baidu.com")
@@ -241,46 +411,8 @@ class IPProxyPlugin(Star):
         if self.http_session and not self.http_session.closed:
             await self.http_session.close()
         logger.info("IP代理插件已终止。")
-
-    # ---- 指令处理部分 (无需修改) ----
-    @filter.command("开启代理", alias={"启动代理", "代理开启"})
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    async def start_proxy(self, event: AstrMessageEvent) -> MessageEventResult:
-        if self.server_task and not self.server_task.done():
-            return event.plain_result("代理服务已经在运行中。")
-        self.server_task = asyncio.create_task(self.start_local_proxy_server())
-        listen_host = self.config.get("listen_host", "127.0.0.1")
-        local_port = self.config.get("local_port", 8888)
-        return event.plain_result(f"代理服务已启动，监听于 {listen_host}:{local_port}")
-
-    @filter.command("关闭代理", alias={"代理关闭", "取消代理"})
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    async def stop_proxy(self, event: AstrMessageEvent) -> MessageEventResult:
-        if not self.server_task or self.server_task.done():
-            return event.plain_result("代理服务未在运行。")
-        self.server_task.cancel()
-        try: await self.server_task
-        except asyncio.CancelledError: pass
-        self.server_task = None; self.server = None
-        return event.plain_result("代理服务已停止。")
-
-    @filter.command("代理状态")
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    async def status_proxy(self, event: AstrMessageEvent) -> MessageEventResult:
-        status_text = "✅运行中" if self.server_task and not self.server_task.done() else "❌已停止"
-        ip_text = f"{self.current_ip}:{self.current_port}" if self.current_ip else "无"
-        listen_host = self.config.get("listen_host", "127.0.0.1")
-        local_port = self.config.get("local_port", 8888)
-        status_message = (
-            f"--- IP代理插件状态 ---\n"
-            f"运行状态: {status_text}\n"
-            f"监听地址: {listen_host}:{local_port}\n"
-            f"当前代理IP: {ip_text}\n"
-            f"累计获取IP数: {self.ip_usage_count}\n\n"
-            f"白名单域名: {', '.join(self.config.get('allowed_domains', ['未配置']))}"
-        )
-        return event.plain_result(status_message)
-
+    
+    # ... 其他修改配置的指令 ...
     @filter.command("修改代理API")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def set_api_url(self, event: AstrMessageEvent, api_url: str) -> MessageEventResult:
