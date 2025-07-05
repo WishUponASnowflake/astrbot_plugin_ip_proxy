@@ -9,7 +9,7 @@ from pathlib import Path
 from asyncio import StreamReader, StreamWriter, Task, Server
 
 from astrbot.api import logger, AstrBotConfig
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, register, StarTools # [修改 1] 导入 StarTools
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 
 # 使用 @register 装饰器注册插件
@@ -40,7 +40,8 @@ class IPProxyPlugin(Star):
         self.http_session = aiohttp.ClientSession()
         
         # --- 数据持久化设置 ---
-        self.data_dir = Path("data") / "ip_proxy_plugin"
+        # [修改 1] 使用 StarTools 获取插件专属数据目录
+        self.data_dir = StarTools.get_data_dir("astrbot_plugin_ip_proxy") 
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.stats_file = self.data_dir / "stats.json"
         self.stats = {}
@@ -181,12 +182,8 @@ class IPProxyPlugin(Star):
                     # 检查总流量限制
                     total_limit = self.stats.get('total_traffic_limit_bytes', 0)
                     if total_limit > 0 and self.stats['total_traffic_bytes'] >= total_limit:
-                        logger.warning(f"总流量已达到或超过限制 ({self._format_bytes(total_limit)})，将停止代理服务。")
-                        # 停止代理服务
-                        if self.server_task and not self.server_task.done():
-                            self.server_task.cancel()
-                            self.server_task = None
-                        # 立即停止当前连接的数据转发
+                        logger.warning(f"总流量已达到或超过限制 ({self._format_bytes(total_limit)})，将停止当前转发。")
+                        # [修改 2] 仅保留 break，不再取消整个服务器任务
                         break 
                 
                 dst.write(data)
@@ -325,10 +322,13 @@ class IPProxyPlugin(Star):
 
         # 计算预计可用天数
         estimated_days = "N/A"
-        if total_traffic_limit > 0 and len(daily_traffic_history) > 0:
+        avg_daily_traffic = 0
+        if len(daily_traffic_history) > 0:
             avg_daily_traffic = sum(daily_traffic_history) / len(daily_traffic_history)
-            if avg_daily_traffic > 0:
-                estimated_days = f"{(remaining_bytes / avg_daily_traffic):.2f} 天"
+
+        if total_traffic_limit > 0 and avg_daily_traffic > 0:
+            estimated_days = f"{(remaining_bytes / avg_daily_traffic):.2f} 天"
+
 
         status_message = (
             f"--- IP代理插件状态 ---\n"
@@ -350,7 +350,6 @@ class IPProxyPlugin(Star):
         )
         return event.plain_result(status_message)
         
-    # get_new_ip 调用异步计数器
     async def get_new_ip(self) -> tuple[str | None, int | None]:
         api_url = self.config.get("api_url")
         if not api_url or "YOUR_TOKEN" in api_url:
