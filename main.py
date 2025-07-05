@@ -17,7 +17,7 @@ from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
     "astrbot_plugin_ip_proxy",
     "timetetng",
     "一个将HTTP代理API转换为本地代理的AstrBot插件 ",
-    "1.5", # 版本号+0.1
+    "1.5",
     "https://github.com/timetetng/astrbot_plugin_ip_proxy"
 )
 class IPProxyPlugin(Star):
