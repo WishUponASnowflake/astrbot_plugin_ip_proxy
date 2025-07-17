@@ -36,7 +36,7 @@
 1.  **进入插件目录：** 进入您的 AstrBot 的 `data/plugins` 目录。
 2.  **克隆仓库:** 使用 `git clone` 来克隆本插件。
     ```bash
-    git clone [https://github.com/timetetng/astrbot_plugin_ip_proxy.git](https://github.com/timetetng/astrbot_plugin_ip_proxy.git)
+    git clone https://github.com/timetetng/astrbot_plugin_ip_proxy.git
     ```
 3.  **重启 AstrBot：** 重启您的 AstrBot 服务以加载插件。插件加载后，会在 `data/ip_proxy_plugin/` 目录下自动创建 `stats.json` 用于存放统计数据。
 
