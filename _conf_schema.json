@@ -1,4 +1,10 @@
 {
+  "enable_visual_status": {
+    "description": "是否启用可视化的代理状态卡片",
+    "type": "bool",
+    "default": false,
+    "hint": "如果开启，'/代理状态' 命令将以图片形式展示，否则为纯文本。需要安装 Playwright 及其依赖 (通过 `pip install playwright jinja2` 安装后执行 `playwright install`)。"
+  },
   "start_on_load": {
     "description": "插件加载时自动开启代理",
     "type": "bool",

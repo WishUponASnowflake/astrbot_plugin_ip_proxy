@@ -3,3 +3,5 @@ datetime
 pathlib
 re
 json
+jinja2
+playwright

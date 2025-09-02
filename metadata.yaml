@@ -1,5 +1,5 @@
 name: astrbot_plugin_ip_proxy
 desc: 一个将HTTP代理API转换为本地代理的AstrBot插件
-version: v1.5
+version: v1.6
 author: timetetng
 repo: https://github.com/timetetng/astrbot_plugin_ip_proxy
