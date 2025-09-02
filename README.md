@@ -1,20 +1,21 @@
-# AstrBot IP代理插件
 
-\<p align="center"\>
-  \<img src="[https://img.shields.io/badge/version-1.7-blue](https://www.google.com/search?q=https://img.shields.io/badge/version-1.7-blue)" alt="Version 1.7"\>
-  \&nbsp;
-  \<img src="[https://img.shields.io/badge/python-3.8+-blue.svg](https://img.shields.io/badge/python-3.8+-blue.svg)" alt="Python 3.8+"\>
-  \&nbsp;
-  \<img src="[https://img.shields.io/badge/AstrBot-%E6%8F%92%E4%BB%B6-ff69b4](https://img.shields.io/badge/AstrBot-%E6%8F%92%E4%BB%B6-ff69b4)" alt="AstrBot Plugin"\>
-  \&nbsp;
-  \<img src="[https://img.shields.io/badge/author-timetetng-orange](https://img.shields.io/badge/author-timetetng-orange)" alt="Author"\>
-  \&nbsp;
-  \<img src="[https://img.shields.io/badge/license-MIT-green](https://img.shields.io/badge/license-MIT-green)" alt="License MIT"\>
-\</p\>
+# Asrbot IP代理插件
 
-通过 AstrBot 将远程 HTTP 代理 API 转换为一个本地代理服务。并能通过Bot在聊天平台使用命令来控制和监控代理服务。\<s\>再也不怕被库洛封ip了\</s\>
+<p align="center">
+  <img src="https://img.shields.io/badge/version-1.5-blue" alt="Version 1.5">
+  &nbsp;
+  <img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+">
+  &nbsp;
+  <img src="https://img.shields.io/badge/AstrBot-%E6%8F%92%E4%BB%B6-ff69b4" alt="AstrBot Plugin">
+  &nbsp;
+  <img src="https://img.shields.io/badge/author-timetetng-orange" alt="Author">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License MIT">
+</p>
+通过 AstrBot 将远程 HTTP 代理 API 转换为一个本地代理服务。并能通过bot在聊天平台使用命令使用和监控代理服务。<s>再也不怕被库洛封ip了</s>
 
------
+---
+
 
 ## 🗎 功能特性
 
@@ -123,7 +124,7 @@
       * **可视化卡片预览:**
 
       <img src="./status.png" width="50%">
-      
+
       * **纯文本示例:**
         ```text
         --- IP代理插件状态 ---
