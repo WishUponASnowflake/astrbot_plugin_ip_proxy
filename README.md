@@ -2,7 +2,7 @@
 # Asrbot IP代理插件
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.5-blue" alt="Version 1.5">
+  <img src="https://img.shields.io/badge/version-1.6-blue" alt="Version 1.6">
   &nbsp;
   <img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+">
   &nbsp;
@@ -29,6 +29,7 @@
   * **缓存自动清理:** 可视化看板生成的图片缓存会自动清理，默认只保留10分钟，节省磁盘空间。
   * **易于配置:** 可在 AstrBot 的 WebUI 可视化配置，也可通过机器人指令配置。
   * **权限控制:** 所有管理指令均需 AstrBot 管理员权限。
+  * **(更新)支持可视化:** 可在 WebUI 开启代理状态可视化，提供更美观的代理状态。
 
 ## 🛠️ 安装方法
 
